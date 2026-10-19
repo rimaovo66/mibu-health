@@ -245,7 +245,7 @@ const store={
   async init(){
     try{this.db=await new Promise((res,rej)=>{const r=indexedDB.open("zhouzhenji",1);r.onupgradeneeded=()=>r.result.createObjectStore("kv");r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)})}catch(e){this.db=null}
     try{if(navigator.storage&&navigator.storage.persist)navigator.storage.persist()}catch(e){}
-    loadAI();
+    loadAI();loadSync();
   },
   tx(mode){return this.db.transaction("kv",mode).objectStore("kv")},
   async get(k){
@@ -331,7 +331,8 @@ function totals(day){
   for(const x of day.foods){t.kcal+=+x.kcal||0;t.p+=+x.p||0;t.c+=+x.c||0;t.f+=+x.f||0;t.fib+=+x.fib||0}
   t.p+=day.quickP||0;t.kcal+=(day.quickP||0)*4;
   t.ex=(day.exercise||[]).reduce((a,e)=>a+(+e.kcal||0),0);
-  t.exMin=(day.exercise||[]).reduce((a,e)=>a+(+e.min||0),0);
+  const manMin=(day.exercise||[]).reduce((a,e)=>a+(+e.min||0),0);
+  t.exMin=day.watch&&day.watch.exMin>manMin?day.watch.exMin:manMin;t.watchKcal=day.watch?day.watch.kcal:0;
   return t;
 }
 
@@ -550,9 +551,10 @@ async function viewHome(){
       <div class="bar-track" style="margin-top:8px"><div class="bar-fill" style="width:${Math.min(100,t.fib/tg.fiber*100)}%;background:var(--fiber)"></div></div></div>
     <div class="card"><h4>🚶 步数</h4><div class="v">${r0(day.steps)}<small> / ${tg.steps}</small></div>
       <div class="bar-track" style="margin-top:8px"><div class="bar-fill" style="width:${Math.min(100,day.steps/tg.steps*100)}%;background:var(--protein)"></div></div>
-      <button class="btn ghost small" data-act="steps" style="margin-top:8px">更新步数</button></div>
+      ${day.watch?`<div class="small muted" style="margin-top:8px">⌚ ${hm(day.watch.at)} 同步</div>`:`<button class="btn ghost small" data-act="steps" style="margin-top:8px">更新步数</button>`}</div>
     <div class="card"><h4>🏋️ 锻炼</h4><div class="v">${r0(t.exMin)}<small> / ${tg.exMin} 分钟</small></div>
       <div class="bar-track" style="margin-top:8px"><div class="bar-fill" style="width:${Math.min(100,t.exMin/tg.exMin*100)}%;background:var(--kcal)"></div></div>
+      ${t.watchKcal?`<div class="small muted" style="margin-top:6px">活动消耗 ${r0(t.watchKcal)} kcal</div>`:""}
       <button class="btn ghost small" data-act="exercise" style="margin-top:8px">记录运动</button></div>
   </div>
   ${tg.protein?"":`<p class="note">在“我的”里完善资料后，会自动计算热量和蛋白质目标。</p>`}`;
@@ -639,6 +641,7 @@ async function viewFood(){
   <section class="panel"><h2>今日餐食</h2>${meals}</section>
   <section class="panel"><div class="row between"><h2 style="margin:0">活动</h2></div>
     ${bar("steps",day.steps,tg.steps)}${bar("ex",t.exMin,tg.exMin)}
+    ${day.watch?`<div class="small muted">⌚ Apple Watch：锻炼 ${day.watch.exMin} 分钟，活动消耗 ${day.watch.kcal} kcal（${hm(day.watch.at)} 同步）。活动消耗只作参考，不加进热量预算，因为目标已经按你的日常活动量算过了。</div>`:""}
     ${(day.exercise||[]).map(e=>`<div class="item"><span>${esc(e.type)} <span class="small muted num">${e.min} 分钟，约 ${r0(e.kcal)} kcal</span></span><button class="x" data-act="delEx" data-id="${e.id}" aria-label="删除">×</button></div>`).join("")}
     <div class="row" style="gap:8px;margin-top:8px"><button class="btn ghost small" data-act="steps">更新步数</button><button class="btn ghost small" data-act="exercise">记录运动</button></div></section>
   <section class="panel"><h2>近 7 天达标</h2>${wkSvg}<div class="legend"><span><i style="background:var(--protein)"></i>蛋白质</span><span><i style="background:var(--fiber)"></i>纤维</span><span><i style="background:var(--water)"></i>饮水</span><span>虚线 = 100%</span></div></section>
@@ -705,6 +708,9 @@ function viewMe(){
       纤维 ${tg.fiber} g，饮水 ${tg.water} ml<br>步数 ${tg.steps}，运动 ${tg.exMin} 分钟</div></section>
   <section class="panel"><div class="row between"><h2 style="margin:0">固定餐</h2><button class="btn ghost small" data-act="newCombo">新建</button></div>
     ${S.combos.length?S.combos.map(c=>`<div class="item"><span>${esc(c.name)} <span class="small muted num">${r0(comboTot(c).kcal)} kcal，蛋白 ${r1(comboTot(c).p)} g</span></span><button class="btn ghost small" data-act="editCombo" data-id="${c.id}">编辑</button></div>`).join(""):`<div class="empty">还没有固定餐。</div>`}</section>
+  <section class="panel"><div class="row between"><h2 style="margin:0">Apple 健康同步</h2><button class="btn ghost small" data-act="syncSettings">设置</button></div>
+    <div class="small muted" style="margin-top:8px">${S.syncCfg.url&&S.syncCfg.key?(S.syncErr?`<span class="warn">上次同步失败：${esc(S.syncErr)}</span>`:(S.syncCfg.last?"上次同步："+hm(S.syncCfg.last):"已设置，还没同步过")):"未设置。设置后步数、锻炼会自动同步。"}</div>
+    ${S.syncCfg.url&&S.syncCfg.key?`<button class="btn ghost small" data-act="syncNow" style="margin-top:8px">立即同步</button>`:""}</section>
   <section class="panel"><div class="row between"><h2 style="margin:0">AI 识别</h2><button class="btn ghost small" data-act="aiSettings">设置</button></div>
     <div class="small muted" style="margin-top:8px">${S.sample?"已开启（"+esc(S.aiCfg.model)+"）":"未开启。不开也能用条形码、在线搜索、粘贴识别和手动输入。"}</div></section>
   <section class="panel"><h2>数据</h2>
@@ -1213,6 +1219,50 @@ async function barcodePaste(){
   $("#bpGo").onclick=()=>go($("#bpTxt").value);
 }
 
+/* ---- Apple Health sync via the user's own Cloudflare Worker ---- */
+function loadSync(){let c={};try{c=JSON.parse(localStorage.getItem("tz:sync")||"{}")}catch(e){}S.syncCfg={url:c.url||"",key:c.key||"",last:c.last||0}}
+function saveSyncCfg(){try{localStorage.setItem("tz:sync",JSON.stringify(S.syncCfg))}catch(e){}}
+function hm(ts){const d=new Date(ts),t=String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0");return dkey(ts)===today()?t:md(ts)+" "+t}
+function genKey(){const a=new Uint8Array(18);crypto.getRandomValues(a);return "zzj_"+[...a].map(b=>b.toString(36).padStart(2,"0")).join("").slice(0,28)}
+async function syncPull(silent){
+  const c=S.syncCfg;if(!c||!c.url||!c.key)return false;
+  if(S._syncing)return false;S._syncing=true;
+  try{
+    const r=await fetch(c.url.replace(/\/+$/,"")+"/pull?since="+dkey(Date.now()-14*DAY),{headers:{Authorization:"Bearer "+c.key}});
+    if(r.status===401)throw {msg:"密钥不对，或还没加到中转站的 ALLOWED_KEYS 里"};
+    if(!r.ok)throw {msg:"中转站返回错误 "+r.status};
+    const j=await r.json();let n=0;
+    for(const [d,v] of Object.entries(j.days||{})){
+      const day=await loadDay(d),w={steps:+v.steps||0,exMin:+v.exMin||0,kcal:+v.kcal||0,at:+v.updatedAt||Date.now()};
+      if(!w.steps&&!w.exMin&&!w.kcal)continue;
+      const o=day.watch||{};
+      if(o.at!==w.at||o.steps!==w.steps||o.exMin!==w.exMin||o.kcal!==w.kcal){day.watch=w;if(w.steps)day.steps=w.steps;store.set("day-"+d,day);n++}
+    }
+    c.last=Date.now();saveSyncCfg();S.syncErr="";
+    if(n&&!isOpen())render();
+    if(!silent)toast(n?"已同步 "+n+" 天的数据":"已经是最新的");
+    return true;
+  }catch(e){S.syncErr=e.msg||"网络连接失败";if(!silent)toast("同步失败："+S.syncErr);return false}
+  finally{S._syncing=false}
+}
+function syncSheet(){
+  const c=S.syncCfg;
+  openSheet(`<h3>Apple 健康同步</h3><div class="small muted">快捷指令每天自动把步数、锻炼分钟数和活动消耗发到你自己的中转站，周针记打开时自动取回。部署方法见使用说明。</div>
+   <label>中转站网址</label><input id="syUrl" placeholder="https://zhouzhenji-sync.xxx.workers.dev" value="${esc(c.url)}" autocapitalize="off" autocomplete="off">
+   <label>你的密钥</label><div class="row"><input id="syKey" value="${esc(c.key)}" autocapitalize="off" autocomplete="off" style="font-family:ui-monospace,Menlo,monospace;font-size:13px"><button class="btn ghost small" id="syGen" style="white-space:nowrap">生成</button></div>
+   <div class="note">密钥要同时填在三个地方：这里、中转站的 ALLOWED_KEYS、快捷指令的网址里。每个人用自己的密钥，数据互相看不到。</div>
+   <button class="btn ghost small" id="syCopy" style="margin-top:8px">复制密钥</button>
+   <div id="syMsg" class="small" style="margin-top:10px"></div>
+   <div class="row" style="margin-top:14px;gap:8px"><button class="btn ghost" id="syTest" style="flex:1">测试并同步</button><button class="btn" id="sySave" style="flex:1">保存</button></div>`);
+  const persist=()=>{c.url=$("#syUrl").value.trim();c.key=$("#syKey").value.trim();saveSyncCfg()};
+  $("#syGen").onclick=()=>{if(c.key&&!confirm("换新密钥后，中转站和快捷指令里的也要一起改。继续？"))return;$("#syKey").value=genKey()};
+  $("#syCopy").onclick=async()=>{try{await navigator.clipboard.writeText($("#syKey").value.trim());toast("已复制密钥")}catch(e){$("#syKey").select();toast("请手动复制")}};
+  $("#sySave").onclick=()=>{persist();closeSheet();render();syncPull(true)};
+  $("#syTest").onclick=async()=>{persist();if(!c.url||!c.key){$("#syMsg").textContent="请先填网址和密钥";return}
+    $("#syMsg").textContent="连接中…";const ok=await syncPull(true);
+    if($("#syMsg"))$("#syMsg").innerHTML=ok?`<span style="color:var(--fiber)">✓ 连接成功</span>`:`<span class="warn">${esc(S.syncErr)}</span>`};
+}
+
 /* ---- backup ---- */
 function backupNag(){
   const lb=S.settings.lastBackup,need=lb?Date.now()-lb>14*DAY:S.activity.length>=5;if(!need)return "";
@@ -1312,6 +1362,8 @@ document.addEventListener("click",async e=>{
     case "paste":return pasteSheet();
     case "import":$("#importIn").value="";return $("#importIn").click();
     case "aiSettings":return aiSheet();
+    case "syncSettings":return syncSheet();
+    case "syncNow":await syncPull(false);return render();
     case "extLabel":return externalAI("label","barcode");
     case "label":$("#labelIn").value="";return $("#labelIn").click();
     case "search":return searchSheet();
@@ -1347,6 +1399,8 @@ setInterval(()=>{if(!isOpen()&&(S.tab==="home"||S.tab==="meds")&&document.visibi
   await loadDay(today());
   await render();
   if(!S.settings.onboarded)profileSheet(true);
+  syncPull(true);
+  document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible"&&Date.now()-(S.syncCfg.last||0)>3*60e3)syncPull(true)});
 })();
 </script>
 </body>
