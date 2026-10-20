@@ -317,6 +317,7 @@ function planFor(p){
   }
   return out;
 }
+function profileMissing(){const s=S.settings,m=[];if(!s.sex)m.push("性别");if(!s.age)m.push("年龄");if(!s.heightCm)m.push("身高");if(curWeight()===null)m.push("体重");return m}
 function targets(){
   const s=S.settings,w=curWeight();
   const pl=planFor({sex:s.sex,age:s.age,h:s.heightCm,w,goal:s.goalKg,rate:s.rateKg,act:s.activity});
@@ -546,7 +547,7 @@ async function viewHome(){
       <div class="pm"><button data-act="water" data-v="-250" aria-label="减一杯">−</button><span class="small num">${r1(day.waterMl/1000)}/${r1(tg.water/1000)} L</span><button data-act="water" data-v="250" aria-label="加一杯">+</button></div></div>
     <div class="card"><h4>🔥 热量</h4><div class="v">${r0(t.kcal)}<small> / ${tg.kcal||"—"} kcal</small></div>
       <div class="bar-track" style="margin-top:8px"><div class="bar-fill" style="width:${tg.kcal?Math.min(100,t.kcal/tg.kcal*100):0}%;background:var(--kcal)"></div></div>
-      <div class="small muted" style="margin-top:6px">${remain!==null?"还剩 "+r0(remain)+" kcal":"完善资料后计算目标"}</div></div>
+      <div class="small muted" style="margin-top:6px">${remain!==null?"还剩 "+r0(remain)+" kcal":(profileMissing().length?"资料还缺"+profileMissing().join("、"):"—")}</div></div>
     <div class="card"><h4>🌿 纤维 ${ft("fiber")}</h4><div class="v">${r0(t.fib)}<small> / ${tg.fiber} g</small></div>
       <div class="bar-track" style="margin-top:8px"><div class="bar-fill" style="width:${Math.min(100,t.fib/tg.fiber*100)}%;background:var(--fiber)"></div></div></div>
     <div class="card"><h4>🚶 步数</h4><div class="v">${r0(day.steps)}<small> / ${tg.steps}</small></div>
@@ -702,14 +703,14 @@ function viewMe(){
     <div class="small" style="margin-top:8px;line-height:1.9">药物：${esc(s.med)}<br>注射时间：${s.injWeekday!==null&&s.injWeekday!==""?"每周"+WEEK[s.injWeekday]+" "+s.injTime:"未设定"}</div></section>
   <section class="panel"><div class="row between"><h2 style="margin:0">每日目标</h2><button class="btn ghost small" data-act="settings">修改</button></div>
     <div class="small" style="margin-top:8px;line-height:1.9">
-      热量：${tg.kcal?tg.kcal+" kcal"+(s.kcalAuto?"（自动计算"+(pl.floorHit?"，已按最低安全值":"")+"）":"（手动）"):"完善资料后自动计算"}<br>
+      热量：${tg.kcal?tg.kcal+" kcal"+(s.kcalAuto?"（自动计算"+(pl.floorHit?"，已按最低安全值":"")+"）":"（手动）"):(profileMissing().length?"还缺"+profileMissing().join("、")+"，在上面「修改」里补上就会自动计算":"—")}<br>
       蛋白质：${tg.protein?tg.protein+" g":"—"}（每公斤 ${s.proteinPerKg} g）<br>
       脂肪 ${tg.fat||"—"} g，碳水 ${tg.carbs||"—"} g<br>
       纤维 ${tg.fiber} g，饮水 ${tg.water} ml<br>步数 ${tg.steps}，运动 ${tg.exMin} 分钟</div></section>
   <section class="panel"><div class="row between"><h2 style="margin:0">固定餐</h2><button class="btn ghost small" data-act="newCombo">新建</button></div>
     ${S.combos.length?S.combos.map(c=>`<div class="item"><span>${esc(c.name)} <span class="small muted num">${r0(comboTot(c).kcal)} kcal，蛋白 ${r1(comboTot(c).p)} g</span></span><button class="btn ghost small" data-act="editCombo" data-id="${c.id}">编辑</button></div>`).join(""):`<div class="empty">还没有固定餐。</div>`}</section>
   <section class="panel"><div class="row between"><h2 style="margin:0">Apple 健康同步</h2><button class="btn ghost small" data-act="syncSettings">设置</button></div>
-    <div class="small muted" style="margin-top:8px">${S.syncCfg.url&&S.syncCfg.key?(S.syncErr?`<span class="warn">上次同步失败：${esc(S.syncErr)}</span>`:(S.syncCfg.last?"上次同步："+hm(S.syncCfg.last):"已设置，还没同步过")):"未设置。设置后步数、锻炼会自动同步。"}</div>
+    <div class="small muted" style="margin-top:8px">${S.syncCfg.url&&S.syncCfg.key?(S.syncErr?`<span class="warn">上次同步失败：${esc(S.syncErr)}</span>`:(S.syncCfg.last?"上次同步："+hm(S.syncCfg.last)+"，"+(S.syncCfg.latest?"中转站里最新的是 "+md(S.syncCfg.latest+"T12:00")+" 的数据":"中转站里还没有数据，检查一下快捷指令"):"已设置，还没同步过")):"未设置。设置后步数、锻炼会自动同步。"}</div>
     ${S.syncCfg.url&&S.syncCfg.key?`<button class="btn ghost small" data-act="syncNow" style="margin-top:8px">立即同步</button>`:""}</section>
   <section class="panel"><div class="row between"><h2 style="margin:0">AI 识别</h2><button class="btn ghost small" data-act="aiSettings">设置</button></div>
     <div class="small muted" style="margin-top:8px">${S.sample?"已开启（"+esc(S.aiCfg.model)+"）":"未开启。不开也能用条形码、在线搜索、粘贴识别和手动输入。"}</div></section>
@@ -1231,7 +1232,7 @@ async function syncPull(silent){
     const r=await fetch(c.url.replace(/\/+$/,"")+"/pull?since="+dkey(Date.now()-14*DAY),{headers:{Authorization:"Bearer "+c.key}});
     if(r.status===401)throw {msg:"密钥不对，或还没加到中转站的 ALLOWED_KEYS 里"};
     if(!r.ok)throw {msg:"中转站返回错误 "+r.status};
-    const j=await r.json();let n=0;
+    const j=await r.json();let n=0;const ds=Object.keys(j.days||{}).sort();c.latest=ds.length?ds[ds.length-1]:"";
     for(const [d,v] of Object.entries(j.days||{})){
       const day=await loadDay(d),w={steps:+v.steps||0,exMin:+v.exMin||0,kcal:+v.kcal||0,at:+v.updatedAt||Date.now()};
       if(!w.steps&&!w.exMin&&!w.kcal)continue;
